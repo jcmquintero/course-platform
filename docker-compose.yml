@@ -1,0 +1,36 @@
+services:
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: course-platform-postgres
+    environment:
+      POSTGRES_DB: courses
+      POSTGRES_USER: courses
+      POSTGRES_PASSWORD: courses
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U courses -d courses"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: course-platform-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: courses
+      RABBITMQ_DEFAULT_PASS: courses
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
