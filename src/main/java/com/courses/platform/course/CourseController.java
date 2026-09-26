@@ -1,0 +1,47 @@
+package com.courses.platform.course;
+
+import com.courses.platform.course.dto.CourseResponse;
+import com.courses.platform.course.dto.CreateCourseRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/courses")
+public class CourseController {
+
+    private final CourseService courseService;
+
+    public CourseController(CourseService courseService) {
+        this.courseService = courseService;
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public CourseResponse create(@Valid @RequestBody CreateCourseRequest request) {
+        return courseService.create(request);
+    }
+
+    @GetMapping("/{id}")
+    public CourseResponse findById(@PathVariable UUID id) {
+        return courseService.findById(id);
+    }
+
+    @PostMapping("/{id}/publish")
+    public CourseResponse publish(@PathVariable UUID id) {
+        return courseService.publish(id);
+    }
+
+    @PostMapping("/{id}/archive")
+    public CourseResponse archive(@PathVariable UUID id) {
+        return courseService.archive(id);
+    }
+}

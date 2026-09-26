@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import com.courses.platform.shared.InvalidStateTransitionException;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -123,5 +124,23 @@ public class Course {
 
     public Instructor getInstructor() {
         return instructor;
+    }
+
+    public void publish() {
+        if (status != CourseStatus.DRAFT) {
+            throw new InvalidStateTransitionException(
+                    "Only draft courses can be published");
+        }
+
+        status = CourseStatus.PUBLISHED;
+    }
+
+    public void archive() {
+        if (status == CourseStatus.ARCHIVED) {
+            throw new InvalidStateTransitionException(
+                    "Course is already archived");
+        }
+
+        status = CourseStatus.ARCHIVED;
     }
 }
