@@ -1,6 +1,7 @@
 package com.courses.platform.enrollment;
 
 import com.courses.platform.course.Course;
+import com.courses.platform.shared.InvalidStateTransitionException;
 import com.courses.platform.student.Student;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -46,16 +47,35 @@ public class Enrollment {
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
+    @Column(name = "idempotency_key", unique = true)
+    private String idempotencyKey;
+
     protected Enrollment() {
     }
 
-    public Enrollment(Student student, Course course) {
+    public Enrollment(Student student, Course course, String idempotencyKey) {
         this.id = UUID.randomUUID();
         this.student = student;
         this.course = course;
         this.status = EnrollmentStatus.PENDING_PAYMENT;
         this.progress = 0;
         this.enrolledAt = Instant.now();
+        this.idempotencyKey = idempotencyKey;
+    }
+
+    public void cancel() {
+        if (status == EnrollmentStatus.CANCELLED) {
+            throw new InvalidStateTransitionException(
+                    "Enrollment is already cancelled");
+        }
+
+        if (status == EnrollmentStatus.COMPLETED) {
+            throw new InvalidStateTransitionException(
+                    "Completed enrollment cannot be cancelled");
+        }
+
+        status = EnrollmentStatus.CANCELLED;
+        cancelledAt = Instant.now();
     }
 
     public UUID getId() {
@@ -88,5 +108,9 @@ public class Enrollment {
 
     public Instant getCancelledAt() {
         return cancelledAt;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
     }
 }
