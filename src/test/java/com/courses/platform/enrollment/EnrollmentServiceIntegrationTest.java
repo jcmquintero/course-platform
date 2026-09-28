@@ -1,9 +1,12 @@
 package com.courses.platform.enrollment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +56,9 @@ class EnrollmentServiceIntegrationTest {
 
     @Autowired
     private OutboxEventRepository outboxEventRepository;
+
+    @Autowired
+    private EnrollmentRepository enrollmentRepository;
 
     @Test
     void shouldReleaseSeatOnlyOnceWhenEnrollmentIsCancelled() {
@@ -125,5 +131,70 @@ class EnrollmentServiceIntegrationTest {
                 .orElseThrow();
 
         assertEquals(0, courseAfterSecondCancellation.getOccupiedSeats());
+    }
+
+    @Test
+    void shouldCompleteEnrollmentAndCreateOutboxEventAtOneHundredPercent() {
+        Category category = categoryRepository.save(
+                new Category(
+                        "Completion " + UUID.randomUUID(),
+                        "Completion test"));
+
+        Instructor instructor = instructorRepository.save(
+                new Instructor(
+                        "Test Instructor",
+                        UUID.randomUUID() + "@example.com",
+                        "Test"));
+
+        Course course = new Course(
+                "Completion Test",
+                "Completion test course",
+                5,
+                CourseLevel.BEGINNER,
+                new BigDecimal("20.00"),
+                5,
+                category,
+                instructor);
+
+        course.publish();
+        courseRepository.save(course);
+
+        Student student = studentRepository.save(
+                new Student(
+                        "Test",
+                        "Student",
+                        UUID.randomUUID() + "@example.com"));
+
+        Enrollment enrollment = new Enrollment(
+                student,
+                course,
+                "completion-" + UUID.randomUUID());
+
+        enrollment.activate();
+
+        enrollmentRepository.save(enrollment);
+
+        EnrollmentResponse response = enrollmentService.updateProgress(
+                enrollment.getId(),
+                new UpdateProgressRequest(100));
+
+        assertEquals(EnrollmentStatus.COMPLETED, response.status());
+        assertEquals(100, response.progress());
+
+        Enrollment persisted = enrollmentRepository
+                .findById(enrollment.getId())
+                .orElseThrow();
+
+        assertEquals(EnrollmentStatus.COMPLETED, persisted.getStatus());
+        assertNotNull(persisted.getCompletedAt());
+
+        boolean completionEventExists = outboxEventRepository
+                .findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()
+                .stream()
+                .anyMatch(event -> event.getAggregateId().equals(enrollment.getId())
+                        && event.getEventType()
+                                .equals("EnrollmentCompleted"));
+
+        assertTrue(completionEventExists);
     }
 }

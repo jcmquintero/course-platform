@@ -42,6 +42,8 @@ public class OutboxPublisher {
                 RabbitMqConfig.ENROLLMENT_CREATED_ROUTING_KEY;
             case "PaymentConfirmed" ->
                 RabbitMqConfig.PAYMENT_CONFIRMED_ROUTING_KEY;
+            case "EnrollmentCompleted" ->
+                RabbitMqConfig.ENROLLMENT_COMPLETED_ROUTING_KEY;
             default ->
                 throw new IllegalArgumentException(
                         "Unsupported event type: " + event.getEventType());

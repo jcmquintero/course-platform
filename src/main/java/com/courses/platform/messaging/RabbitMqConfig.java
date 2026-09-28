@@ -20,6 +20,10 @@ public class RabbitMqConfig {
 
     public static final String ENROLLMENT_QUEUE = "enrollment.queue";
 
+    public static final String ENROLLMENT_COMPLETED_ROUTING_KEY = "enrollment.completed";
+
+    public static final String CERTIFICATE_QUEUE = "certificate.queue";
+
     @Bean
     TopicExchange eventsExchange() {
         return new TopicExchange(EVENTS_EXCHANGE);
@@ -53,5 +57,19 @@ public class RabbitMqConfig {
         return BindingBuilder.bind(enrollmentQueue)
                 .to(eventsExchange)
                 .with(PAYMENT_CONFIRMED_ROUTING_KEY);
+    }
+
+    @Bean
+    Queue certificateQueue() {
+        return new Queue(CERTIFICATE_QUEUE, true);
+    }
+
+    @Bean
+    Binding enrollmentCompletedBinding(
+            Queue certificateQueue,
+            TopicExchange eventsExchange) {
+        return BindingBuilder.bind(certificateQueue)
+                .to(eventsExchange)
+                .with(ENROLLMENT_COMPLETED_ROUTING_KEY);
     }
 }

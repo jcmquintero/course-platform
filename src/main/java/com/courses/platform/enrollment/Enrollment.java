@@ -92,6 +92,28 @@ public class Enrollment {
         status = EnrollmentStatus.ACTIVE;
     }
 
+    public boolean updateProgress(int progress) {
+        if (status != EnrollmentStatus.ACTIVE) {
+            throw new InvalidStateTransitionException(
+                    "Progress can only be updated for active enrollment");
+        }
+
+        if (progress < this.progress) {
+            throw new InvalidStateTransitionException(
+                    "Progress cannot decrease");
+        }
+
+        this.progress = progress;
+
+        if (progress == 100) {
+            status = EnrollmentStatus.COMPLETED;
+            completedAt = Instant.now();
+            return true;
+        }
+
+        return false;
+    }
+
     public UUID getId() {
         return id;
     }

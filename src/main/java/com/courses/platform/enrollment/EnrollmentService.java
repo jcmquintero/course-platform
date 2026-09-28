@@ -1,5 +1,6 @@
 package com.courses.platform.enrollment;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import com.courses.platform.enrollment.dto.CreateEnrollmentRequest;
 import com.courses.platform.enrollment.dto.EnrollmentResponse;
 import com.courses.platform.messaging.ProcessedEvent;
 import com.courses.platform.messaging.ProcessedEventRepository;
+import com.courses.platform.messaging.event.EnrollmentCompletedEvent;
 import com.courses.platform.messaging.event.EnrollmentCreatedEvent;
 import com.courses.platform.messaging.event.PaymentConfirmedEvent;
 import com.courses.platform.outbox.OutboxEvent;
@@ -170,6 +172,42 @@ public class EnrollmentService {
 
         processedEventRepository.save(
                 new ProcessedEvent(event.eventId()));
+    }
+
+    @Transactional
+    public EnrollmentResponse updateProgress(
+            UUID enrollmentId,
+            UpdateProgressRequest request) {
+
+        Enrollment enrollment = enrollmentRepository
+                .findById(enrollmentId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Enrollment not found"));
+
+        boolean completed = enrollment.updateProgress(request.progress());
+
+        if (completed) {
+            UUID eventId = UUID.randomUUID();
+
+            EnrollmentCompletedEvent event = new EnrollmentCompletedEvent(
+                    eventId,
+                    1,
+                    Instant.now(),
+                    enrollment.getId(),
+                    enrollment.getStudent().getId(),
+                    enrollment.getCourse().getId());
+
+            String payload = objectMapper.writeValueAsString(event);
+
+            outboxEventRepository.save(
+                    new OutboxEvent(
+                            eventId,
+                            "EnrollmentCompleted",
+                            enrollment.getId(),
+                            payload));
+        }
+
+        return toResponse(enrollment);
     }
 
     private EnrollmentResponse toResponse(Enrollment enrollment) {

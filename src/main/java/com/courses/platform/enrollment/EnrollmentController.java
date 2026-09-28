@@ -33,4 +33,11 @@ public class EnrollmentController {
     public EnrollmentResponse cancel(@PathVariable UUID id) {
         return enrollmentService.cancel(id);
     }
+
+    @PatchMapping("/{id}/progress")
+    public EnrollmentResponse updateProgress(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateProgressRequest request) {
+        return enrollmentService.updateProgress(id, request);
+    }
 }
