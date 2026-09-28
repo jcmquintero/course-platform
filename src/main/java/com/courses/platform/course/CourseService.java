@@ -13,6 +13,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -67,8 +69,10 @@ public class CourseService {
     }
 
     @Transactional
-    public CourseResponse publish(UUID id) {
+    public CourseResponse publish(UUID id, Authentication authentication) {
         Course course = getCourse(id);
+
+        validateOwnership(course, authentication);
 
         course.publish();
 
@@ -76,8 +80,10 @@ public class CourseService {
     }
 
     @Transactional
-    public CourseResponse archive(UUID id) {
+    public CourseResponse archive(UUID id, Authentication authentication) {
         Course course = getCourse(id);
+
+        validateOwnership(course, authentication);
 
         course.archive();
 
@@ -111,6 +117,27 @@ public class CourseService {
         return courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Course not found: " + id));
+    }
+
+    private void validateOwnership(
+            Course course,
+            Authentication authentication) {
+
+        boolean admin = authentication.getAuthorities()
+                .stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+
+        if (admin) {
+            return;
+        }
+
+        String authenticatedEmail = authentication.getName();
+
+        if (!course.getInstructor().getEmail()
+                .equalsIgnoreCase(authenticatedEmail)) {
+            throw new AccessDeniedException(
+                    "You cannot modify another instructor's course");
+        }
     }
 
     private CourseResponse toResponse(Course course) {

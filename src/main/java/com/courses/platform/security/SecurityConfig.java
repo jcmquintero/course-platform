@@ -36,9 +36,43 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+
                         .requestMatchers(HttpMethod.POST, "/api/auth/token").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
-                        .anyRequest().authenticated())
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/categories/**",
+                                "/api/instructors/**",
+                                "/api/courses")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/courses/*/publish",
+                                "/api/courses/*/archive")
+                        .hasAnyRole("ADMIN", "INSTRUCTOR")
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/enrollments")
+                        .hasAnyRole("ADMIN", "STUDENT")
+
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/enrollments/*/progress")
+                        .hasAnyRole("ADMIN", "STUDENT")
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/enrollments/*/cancel")
+                        .hasAnyRole("ADMIN", "STUDENT")
+
+                        .requestMatchers(HttpMethod.GET, "/api/**")
+                        .authenticated()
+
+                        .anyRequest()
+                        .authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt
                                 .jwtAuthenticationConverter(jwtAuthenticationConverter)));

@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,13 +42,13 @@ public class CourseController {
     }
 
     @PostMapping("/{id}/publish")
-    public CourseResponse publish(@PathVariable UUID id) {
-        return courseService.publish(id);
+    public CourseResponse publish(@PathVariable UUID id, Authentication authentication) {
+        return courseService.publish(id, authentication);
     }
 
     @PostMapping("/{id}/archive")
-    public CourseResponse archive(@PathVariable UUID id) {
-        return courseService.archive(id);
+    public CourseResponse archive(@PathVariable UUID id, Authentication authentication) {
+        return courseService.archive(id, authentication);
     }
 
     @GetMapping
