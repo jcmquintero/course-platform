@@ -3,11 +3,12 @@ package com.courses.platform.course;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface CourseRepository extends JpaRepository<Course, UUID> {
+public interface CourseRepository extends JpaRepository<Course, UUID>, JpaSpecificationExecutor<Course>  {
 
     @Modifying
     @Query("""
@@ -20,7 +21,7 @@ public interface CourseRepository extends JpaRepository<Course, UUID> {
     int reserveSeat(
             @Param("courseId") UUID courseId,
             @Param("status") CourseStatus status);
-            
+
 
     @Modifying
     @Query("""
