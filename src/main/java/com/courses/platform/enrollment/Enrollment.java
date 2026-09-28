@@ -78,6 +78,20 @@ public class Enrollment {
         cancelledAt = Instant.now();
     }
 
+    public void activate() {
+        if (status == EnrollmentStatus.ACTIVE) {
+            throw new InvalidStateTransitionException(
+                    "Enrollment is already active");
+        }
+
+        if (status != EnrollmentStatus.PENDING_PAYMENT) {
+            throw new InvalidStateTransitionException(
+                    "Only pending enrollment can be activated");
+        }
+
+        status = EnrollmentStatus.ACTIVE;
+    }
+
     public UUID getId() {
         return id;
     }

@@ -10,12 +10,21 @@ import com.courses.platform.course.CourseRepository;
 import com.courses.platform.course.CourseStatus;
 import com.courses.platform.enrollment.dto.CreateEnrollmentRequest;
 import com.courses.platform.enrollment.dto.EnrollmentResponse;
+import com.courses.platform.messaging.ProcessedEvent;
+import com.courses.platform.messaging.ProcessedEventRepository;
+import com.courses.platform.messaging.event.EnrollmentCreatedEvent;
+import com.courses.platform.messaging.event.PaymentConfirmedEvent;
+import com.courses.platform.outbox.OutboxEvent;
+import com.courses.platform.outbox.OutboxEventRepository;
 import com.courses.platform.payment.Payment;
 import com.courses.platform.payment.PaymentRepository;
 import com.courses.platform.shared.ConflictException;
 import com.courses.platform.shared.ResourceNotFoundException;
 import com.courses.platform.student.Student;
 import com.courses.platform.student.StudentRepository;
+
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
 
 @Service
 public class EnrollmentService {
@@ -24,16 +33,25 @@ public class EnrollmentService {
     private final StudentRepository studentRepository;
     private final CourseRepository courseRepository;
     private final PaymentRepository paymentRepository;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
+    private final ProcessedEventRepository processedEventRepository;
 
     public EnrollmentService(
             EnrollmentRepository enrollmentRepository,
             StudentRepository studentRepository,
             CourseRepository courseRepository,
-            PaymentRepository paymentRepository) {
+            PaymentRepository paymentRepository,
+            OutboxEventRepository outboxEventRepository,
+            ObjectMapper objectMapper,
+            ProcessedEventRepository processedEventRepository) {
         this.enrollmentRepository = enrollmentRepository;
         this.studentRepository = studentRepository;
         this.courseRepository = courseRepository;
         this.paymentRepository = paymentRepository;
+        this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
+        this.processedEventRepository = processedEventRepository;
     }
 
     @Transactional
@@ -89,6 +107,34 @@ public class EnrollmentService {
 
         paymentRepository.save(payment);
 
+        UUID eventId = UUID.randomUUID();
+
+        EnrollmentCreatedEvent event = new EnrollmentCreatedEvent(
+                eventId,
+                1,
+                java.time.Instant.now(),
+                savedEnrollment.getId(),
+                student.getId(),
+                course.getId(),
+                payment.getId(),
+                payment.getAmount(),
+                payment.getCurrency());
+
+        try {
+            String payload = objectMapper.writeValueAsString(event);
+
+            outboxEventRepository.save(
+                    new OutboxEvent(
+                            eventId,
+                            "EnrollmentCreated",
+                            savedEnrollment.getId(),
+                            payload));
+        } catch (JacksonException exception) {
+            throw new IllegalStateException(
+                    "Could not serialize EnrollmentCreated event",
+                    exception);
+        }
+
         return toResponse(savedEnrollment);
     }
 
@@ -107,6 +153,23 @@ public class EnrollmentService {
         }
 
         return toResponse(enrollment);
+    }
+
+    @Transactional
+    public void processPaymentConfirmed(PaymentConfirmedEvent event) {
+        if (processedEventRepository.existsById(event.eventId())) {
+            return;
+        }
+
+        Enrollment enrollment = enrollmentRepository
+                .findById(event.enrollmentId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Enrollment not found"));
+
+        enrollment.activate();
+
+        processedEventRepository.save(
+                new ProcessedEvent(event.eventId()));
     }
 
     private EnrollmentResponse toResponse(Enrollment enrollment) {

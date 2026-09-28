@@ -22,6 +22,8 @@ import com.courses.platform.enrollment.dto.CreateEnrollmentRequest;
 import com.courses.platform.enrollment.dto.EnrollmentResponse;
 import com.courses.platform.instructor.Instructor;
 import com.courses.platform.instructor.InstructorRepository;
+import com.courses.platform.outbox.OutboxEvent;
+import com.courses.platform.outbox.OutboxEventRepository;
 import com.courses.platform.shared.InvalidStateTransitionException;
 import com.courses.platform.student.Student;
 import com.courses.platform.student.StudentRepository;
@@ -32,8 +34,7 @@ class EnrollmentServiceIntegrationTest {
 
     @Container
     @ServiceConnection
-    static PostgreSQLContainer postgres =
-            new PostgreSQLContainer("postgres:17-alpine");
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
 
     @Autowired
     private CategoryRepository categoryRepository;
@@ -49,6 +50,9 @@ class EnrollmentServiceIntegrationTest {
 
     @Autowired
     private EnrollmentService enrollmentService;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
 
     @Test
     void shouldReleaseSeatOnlyOnceWhenEnrollmentIsCancelled() {
@@ -85,6 +89,16 @@ class EnrollmentServiceIntegrationTest {
                         student.getId(),
                         course.getId()),
                 "cancel-test-001");
+
+        var pendingEvents = outboxEventRepository
+                .findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
+
+        assertEquals(1, pendingEvents.size());
+
+        OutboxEvent event = pendingEvents.getFirst();
+
+        assertEquals("EnrollmentCreated", event.getEventType());
+        assertEquals(enrollment.id(), event.getAggregateId());
 
         Course courseAfterEnrollment = courseRepository
                 .findById(course.getId())

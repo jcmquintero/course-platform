@@ -1,6 +1,8 @@
 package com.courses.platform.payment;
 
 import com.courses.platform.enrollment.Enrollment;
+import com.courses.platform.shared.InvalidStateTransitionException;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -61,6 +63,21 @@ public class Payment {
         this.idempotencyKey = idempotencyKey;
         this.status = PaymentStatus.PENDING;
         this.createdAt = Instant.now();
+    }
+
+    public void confirm() {
+        if (status == PaymentStatus.CONFIRMED) {
+            throw new InvalidStateTransitionException(
+                    "Payment is already confirmed");
+        }
+
+        if (status == PaymentStatus.FAILED) {
+            throw new InvalidStateTransitionException(
+                    "Failed payment cannot be confirmed");
+        }
+
+        status = PaymentStatus.CONFIRMED;
+        confirmedAt = Instant.now();
     }
 
     public UUID getId() {
