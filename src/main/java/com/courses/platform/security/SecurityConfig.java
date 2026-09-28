@@ -68,6 +68,12 @@ public class SecurityConfig {
                                 "/api/enrollments/*/cancel")
                         .hasAnyRole("ADMIN", "STUDENT")
 
+                        .requestMatchers(
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**")
+                        .permitAll()
+
                         .requestMatchers(HttpMethod.GET, "/api/**")
                         .authenticated()
 
