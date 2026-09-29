@@ -12,20 +12,27 @@ import com.courses.platform.messaging.ProcessedEventRepository;
 import com.courses.platform.messaging.event.EnrollmentCompletedEvent;
 import com.courses.platform.shared.ResourceNotFoundException;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+
 @Service
 public class CertificateService {
 
     private final CertificateRepository certificateRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final ProcessedEventRepository processedEventRepository;
+    private final Counter certificatesIssuedCounter;
 
     public CertificateService(
             CertificateRepository certificateRepository,
             EnrollmentRepository enrollmentRepository,
-            ProcessedEventRepository processedEventRepository) {
+            ProcessedEventRepository processedEventRepository,
+            MeterRegistry meterRegistry
+        ) {
         this.certificateRepository = certificateRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.processedEventRepository = processedEventRepository;
+        this.certificatesIssuedCounter = meterRegistry.counter("certificates.issued");
     }
 
     @Transactional
@@ -48,6 +55,7 @@ public class CertificateService {
                     UUID.randomUUID().toString());
 
             certificateRepository.save(certificate);
+            certificatesIssuedCounter.increment();
         }
 
         processedEventRepository.save(

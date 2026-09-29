@@ -25,6 +25,9 @@ import com.courses.platform.shared.ResourceNotFoundException;
 import com.courses.platform.student.Student;
 import com.courses.platform.student.StudentRepository;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.core.JacksonException;
 
@@ -38,6 +41,7 @@ public class EnrollmentService {
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
     private final ProcessedEventRepository processedEventRepository;
+    private final Counter enrollmentsCreatedCounter;
 
     public EnrollmentService(
             EnrollmentRepository enrollmentRepository,
@@ -46,7 +50,8 @@ public class EnrollmentService {
             PaymentRepository paymentRepository,
             OutboxEventRepository outboxEventRepository,
             ObjectMapper objectMapper,
-            ProcessedEventRepository processedEventRepository) {
+            ProcessedEventRepository processedEventRepository,
+            MeterRegistry meterRegistry) {
         this.enrollmentRepository = enrollmentRepository;
         this.studentRepository = studentRepository;
         this.courseRepository = courseRepository;
@@ -54,6 +59,7 @@ public class EnrollmentService {
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
         this.processedEventRepository = processedEventRepository;
+        this.enrollmentsCreatedCounter = meterRegistry.counter("enrollments.created");
     }
 
     @Transactional
@@ -137,7 +143,9 @@ public class EnrollmentService {
                     exception);
         }
 
+        enrollmentsCreatedCounter.increment();
         return toResponse(savedEnrollment);
+
     }
 
     @Transactional

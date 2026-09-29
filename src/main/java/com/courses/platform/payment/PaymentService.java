@@ -14,6 +14,9 @@ import com.courses.platform.outbox.OutboxEvent;
 import com.courses.platform.outbox.OutboxEventRepository;
 import com.courses.platform.shared.ResourceNotFoundException;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -23,16 +26,19 @@ public class PaymentService {
     private final ProcessedEventRepository processedEventRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final Counter paymentsConfirmedCounter;
 
     public PaymentService(
             PaymentRepository paymentRepository,
             ProcessedEventRepository processedEventRepository,
             OutboxEventRepository outboxEventRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            MeterRegistry meterRegistry) {
         this.paymentRepository = paymentRepository;
         this.processedEventRepository = processedEventRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
+        this.paymentsConfirmedCounter = meterRegistry.counter("payments.confirmed");
     }
 
     @Transactional
@@ -48,6 +54,7 @@ public class PaymentService {
                         "Payment not found"));
 
         payment.confirm();
+        paymentsConfirmedCounter.increment();
 
         UUID paymentConfirmedEventId = UUID.randomUUID();
 
