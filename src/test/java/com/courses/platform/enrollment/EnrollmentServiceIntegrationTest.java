@@ -6,12 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -60,6 +64,13 @@ class EnrollmentServiceIntegrationTest {
     @Autowired
     private EnrollmentRepository enrollmentRepository;
 
+    private Authentication adminAuthentication() {
+    return new UsernamePasswordAuthenticationToken(
+            "admin",
+            null,
+            List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+}
+
     @Test
     void shouldReleaseSeatOnlyOnceWhenEnrollmentIsCancelled() {
         Category category = categoryRepository.save(
@@ -94,7 +105,8 @@ class EnrollmentServiceIntegrationTest {
                 new CreateEnrollmentRequest(
                         student.getId(),
                         course.getId()),
-                "cancel-test-001");
+                "cancel-test-001",
+             adminAuthentication());
 
         var pendingEvents = outboxEventRepository
                 .findTop100ByPublishedAtIsNullOrderByCreatedAtAsc();
@@ -112,7 +124,7 @@ class EnrollmentServiceIntegrationTest {
 
         assertEquals(1, courseAfterEnrollment.getOccupiedSeats());
 
-        EnrollmentResponse cancelled = enrollmentService.cancel(enrollment.id());
+        EnrollmentResponse cancelled = enrollmentService.cancel(enrollment.id(), adminAuthentication());
 
         assertEquals(EnrollmentStatus.CANCELLED, cancelled.status());
 
@@ -124,7 +136,7 @@ class EnrollmentServiceIntegrationTest {
 
         assertThrows(
                 InvalidStateTransitionException.class,
-                () -> enrollmentService.cancel(enrollment.id()));
+                () -> enrollmentService.cancel(enrollment.id(), adminAuthentication()));
 
         Course courseAfterSecondCancellation = courseRepository
                 .findById(course.getId())
@@ -176,7 +188,8 @@ class EnrollmentServiceIntegrationTest {
 
         EnrollmentResponse response = enrollmentService.updateProgress(
                 enrollment.getId(),
-                new UpdateProgressRequest(100));
+                new UpdateProgressRequest(100),
+                adminAuthentication());
 
         assertEquals(EnrollmentStatus.COMPLETED, response.status());
         assertEquals(100, response.progress());

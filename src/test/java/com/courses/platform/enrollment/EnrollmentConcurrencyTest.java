@@ -3,6 +3,7 @@ package com.courses.platform.enrollment;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -14,6 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -52,6 +56,13 @@ class EnrollmentConcurrencyTest {
 
     @Autowired
     private EnrollmentService enrollmentService;
+
+    private Authentication adminAuthentication() {
+        return new UsernamePasswordAuthenticationToken(
+                "admin",
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+    }
 
     @Test
     void shouldNotExceedCourseCapacityWhenTwoStudentsEnrollConcurrently() throws Exception {
@@ -100,7 +111,8 @@ class EnrollmentConcurrencyTest {
                         new CreateEnrollmentRequest(
                                 firstStudent.getId(),
                                 course.getId()),
-                        "concurrent-001");
+                        "concurrent-001",
+                        adminAuthentication());
 
                 return true;
             } catch (ConflictException exception) {
@@ -116,7 +128,8 @@ class EnrollmentConcurrencyTest {
                         new CreateEnrollmentRequest(
                                 secondStudent.getId(),
                                 course.getId()),
-                        "concurrent-002");
+                        "concurrent-002",
+                        adminAuthentication());
 
                 return true;
             } catch (ConflictException exception) {

@@ -24,6 +24,8 @@ import com.courses.platform.shared.ConflictException;
 import com.courses.platform.shared.ResourceNotFoundException;
 import com.courses.platform.student.Student;
 import com.courses.platform.student.StudentRepository;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -65,7 +67,8 @@ public class EnrollmentService {
     @Transactional
     public EnrollmentResponse enroll(
             CreateEnrollmentRequest request,
-            String idempotencyKey) {
+            String idempotencyKey,
+            Authentication authentication) {
 
         Enrollment existingEnrollment = enrollmentRepository
                 .findByIdempotencyKey(idempotencyKey)
@@ -85,6 +88,8 @@ public class EnrollmentService {
 
         Student student = studentRepository.findById(request.studentId())
                 .orElseThrow(() -> new ResourceNotFoundException("Student not found"));
+
+        validateStudentOwnership(student, authentication);
 
         Course course = courseRepository.findById(request.courseId())
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
@@ -149,10 +154,11 @@ public class EnrollmentService {
     }
 
     @Transactional
-    public EnrollmentResponse cancel(UUID enrollmentId) {
+    public EnrollmentResponse cancel(UUID enrollmentId, Authentication authentication) {
         Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
 
+        validateStudentOwnership(enrollment.getStudent(), authentication);
         enrollment.cancel();
 
         int updatedRows = courseRepository.releaseSeat(
@@ -185,12 +191,15 @@ public class EnrollmentService {
     @Transactional
     public EnrollmentResponse updateProgress(
             UUID enrollmentId,
-            UpdateProgressRequest request) {
+            UpdateProgressRequest request,
+            Authentication authentication) {
 
         Enrollment enrollment = enrollmentRepository
                 .findById(enrollmentId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Enrollment not found"));
+
+        validateStudentOwnership(enrollment.getStudent(),authentication);
 
         boolean completed = enrollment.updateProgress(request.progress());
 
@@ -216,6 +225,25 @@ public class EnrollmentService {
         }
 
         return toResponse(enrollment);
+    }
+
+    private void validateStudentOwnership(
+            Student student,
+            Authentication authentication) {
+
+        boolean admin = authentication.getAuthorities()
+                .stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+
+        if (admin) {
+            return;
+        }
+
+        if (!student.getEmail()
+                .equalsIgnoreCase(authentication.getName())) {
+            throw new AccessDeniedException(
+                    "You cannot manage another student's enrollment");
+        }
     }
 
     private EnrollmentResponse toResponse(Enrollment enrollment) {
