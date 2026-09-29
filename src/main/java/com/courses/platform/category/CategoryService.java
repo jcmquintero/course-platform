@@ -2,8 +2,12 @@ package com.courses.platform.category;
 
 import com.courses.platform.category.dto.CategoryResponse;
 import com.courses.platform.category.dto.CreateCategoryRequest;
+import com.courses.platform.category.dto.UpdateCategoryRequest;
 import com.courses.platform.shared.ConflictException;
 import com.courses.platform.shared.ResourceNotFoundException;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +37,32 @@ public class CategoryService {
         Category savedCategory = categoryRepository.save(category);
 
         return toResponse(savedCategory);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<CategoryResponse> findAll(Pageable pageable) {
+        return categoryRepository.findAll(pageable)
+                .map(this::toResponse);
+    }
+
+    @Transactional
+    public CategoryResponse update(UUID id, UpdateCategoryRequest request) {
+
+        Category category = categoryRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+
+        if (categoryRepository.existsByNameAndIdNot(
+                request.name(),
+                id)) {
+            throw new ConflictException(
+                    "Category name already exists");
+        }
+
+        category.update(
+                request.name(),
+                request.description());
+
+        return toResponse(category);
     }
 
     @Transactional(readOnly = true)

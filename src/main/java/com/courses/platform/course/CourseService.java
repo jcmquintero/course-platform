@@ -4,6 +4,7 @@ import com.courses.platform.category.Category;
 import com.courses.platform.category.CategoryRepository;
 import com.courses.platform.course.dto.CourseResponse;
 import com.courses.platform.course.dto.CreateCourseRequest;
+import com.courses.platform.course.dto.UpdateCourseRequest;
 import com.courses.platform.instructor.Instructor;
 import com.courses.platform.instructor.InstructorRepository;
 import com.courses.platform.shared.ResourceNotFoundException;
@@ -59,6 +60,47 @@ public class CourseService {
         Course savedCourse = courseRepository.save(course);
 
         return CourseMapper.toResponse(savedCourse);
+    }
+
+    @Transactional
+    public CourseResponse update(
+            UUID id,
+            UpdateCourseRequest request,
+            Authentication authentication) {
+
+        Course course = courseRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
+
+        validateOwnership(course, authentication);
+
+        boolean admin = authentication.getAuthorities()
+                .stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!admin && !course.getInstructor().getId().equals(request.instructorId())) {
+            throw new AccessDeniedException(
+                    "Instructor cannot transfer course ownership");
+        }
+
+        Category category = categoryRepository
+                .findById(request.categoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+
+        Instructor instructor = instructorRepository
+                .findById(request.instructorId())
+                .orElseThrow(() -> new ResourceNotFoundException("Instructor not found"));
+
+        course.update(
+                request.title(),
+                request.description(),
+                request.estimatedHours(),
+                request.level(),
+                request.price(),
+                request.maxSeats(),
+                category,
+                instructor);
+
+        return toResponse(course);
     }
 
     @Transactional(readOnly = true)

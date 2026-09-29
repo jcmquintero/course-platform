@@ -32,6 +32,11 @@ public class Category {
         this.active = true;
     }
 
+    public void update(String name, String description) {
+        this.name = name;
+        this.description = description;
+    }
+
     public UUID getId() {
         return id;
     }

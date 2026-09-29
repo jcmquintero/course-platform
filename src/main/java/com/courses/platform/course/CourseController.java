@@ -2,6 +2,8 @@ package com.courses.platform.course;
 
 import com.courses.platform.course.dto.CourseResponse;
 import com.courses.platform.course.dto.CreateCourseRequest;
+import com.courses.platform.course.dto.UpdateCourseRequest;
+
 import jakarta.validation.Valid;
 
 import org.springframework.data.domain.Page;
@@ -11,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -69,5 +72,17 @@ public class CourseController {
                 title,
                 available,
                 pageable);
+    }
+
+    @PutMapping("/{id}")
+    public CourseResponse update(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateCourseRequest request,
+            Authentication authentication) {
+
+        return courseService.update(
+                id,
+                request,
+                authentication);
     }
 }

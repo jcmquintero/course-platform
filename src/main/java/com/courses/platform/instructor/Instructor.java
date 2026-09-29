@@ -32,6 +32,12 @@ public class Instructor {
         this.bio = bio;
     }
 
+    public void update(String name, String email, String bio) {
+        this.name = name;
+        this.email = email;
+        this.bio = bio;
+    }
+
     public UUID getId() {
         return id;
     }

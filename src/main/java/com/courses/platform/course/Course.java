@@ -82,6 +82,31 @@ public class Course {
         this.instructor = instructor;
     }
 
+    public void update(
+            String title,
+            String description,
+            int estimatedHours,
+            CourseLevel level,
+            BigDecimal price,
+            int maxSeats,
+            Category category,
+            Instructor instructor) {
+
+        if (maxSeats < occupiedSeats) {
+            throw new InvalidStateTransitionException(
+                    "Maximum seats cannot be lower than occupied seats");
+        }
+
+        this.title = title;
+        this.description = description;
+        this.estimatedHours = estimatedHours;
+        this.level = level;
+        this.price = price;
+        this.maxSeats = maxSeats;
+        this.category = category;
+        this.instructor = instructor;
+    }
+
     public UUID getId() {
         return id;
     }

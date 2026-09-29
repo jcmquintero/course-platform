@@ -1,5 +1,6 @@
 package com.courses.platform.shared;
 
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -62,6 +63,20 @@ public class GlobalExceptionHandler {
                 exception.getMessage());
 
         problem.setTitle("Conflict");
+
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidDataAccessApiUsageException.class)
+    public ProblemDetail handleInvalidDataAccessApiUsage(
+            InvalidDataAccessApiUsageException exception) {
+
+        ProblemDetail problem = ProblemDetail.forStatus(
+                HttpStatus.BAD_REQUEST);
+
+        problem.setTitle("Invalid request");
+        problem.setDetail(
+                "Invalid query parameter");
 
         return problem;
     }
