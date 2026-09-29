@@ -10,6 +10,8 @@ import com.courses.platform.course.Course;
 import com.courses.platform.course.CourseRepository;
 import com.courses.platform.course.CourseStatus;
 import com.courses.platform.enrollment.dto.CreateEnrollmentRequest;
+import com.courses.platform.enrollment.dto.EnrolledCourseResponse;
+import com.courses.platform.enrollment.dto.EnrolledStudentResponse;
 import com.courses.platform.enrollment.dto.EnrollmentResponse;
 import com.courses.platform.messaging.ProcessedEvent;
 import com.courses.platform.messaging.ProcessedEventRepository;
@@ -24,6 +26,9 @@ import com.courses.platform.shared.ConflictException;
 import com.courses.platform.shared.ResourceNotFoundException;
 import com.courses.platform.student.Student;
 import com.courses.platform.student.StudentRepository;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 
@@ -36,223 +41,243 @@ import tools.jackson.core.JacksonException;
 @Service
 public class EnrollmentService {
 
-    private final EnrollmentRepository enrollmentRepository;
-    private final StudentRepository studentRepository;
-    private final CourseRepository courseRepository;
-    private final PaymentRepository paymentRepository;
-    private final OutboxEventRepository outboxEventRepository;
-    private final ObjectMapper objectMapper;
-    private final ProcessedEventRepository processedEventRepository;
-    private final Counter enrollmentsCreatedCounter;
+        private final EnrollmentRepository enrollmentRepository;
+        private final StudentRepository studentRepository;
+        private final CourseRepository courseRepository;
+        private final PaymentRepository paymentRepository;
+        private final OutboxEventRepository outboxEventRepository;
+        private final ObjectMapper objectMapper;
+        private final ProcessedEventRepository processedEventRepository;
+        private final Counter enrollmentsCreatedCounter;
 
-    public EnrollmentService(
-            EnrollmentRepository enrollmentRepository,
-            StudentRepository studentRepository,
-            CourseRepository courseRepository,
-            PaymentRepository paymentRepository,
-            OutboxEventRepository outboxEventRepository,
-            ObjectMapper objectMapper,
-            ProcessedEventRepository processedEventRepository,
-            MeterRegistry meterRegistry) {
-        this.enrollmentRepository = enrollmentRepository;
-        this.studentRepository = studentRepository;
-        this.courseRepository = courseRepository;
-        this.paymentRepository = paymentRepository;
-        this.outboxEventRepository = outboxEventRepository;
-        this.objectMapper = objectMapper;
-        this.processedEventRepository = processedEventRepository;
-        this.enrollmentsCreatedCounter = meterRegistry.counter("enrollments.created");
-    }
-
-    @Transactional
-    public EnrollmentResponse enroll(
-            CreateEnrollmentRequest request,
-            String idempotencyKey,
-            Authentication authentication) {
-
-        Enrollment existingEnrollment = enrollmentRepository
-                .findByIdempotencyKey(idempotencyKey)
-                .orElse(null);
-
-        if (existingEnrollment != null) {
-            boolean sameRequest = existingEnrollment.getStudent().getId().equals(request.studentId())
-                    && existingEnrollment.getCourse().getId().equals(request.courseId());
-
-            if (!sameRequest) {
-                throw new ConflictException(
-                        "Idempotency-Key was already used for a different enrollment");
-            }
-
-            return toResponse(existingEnrollment);
+        public EnrollmentService(
+                        EnrollmentRepository enrollmentRepository,
+                        StudentRepository studentRepository,
+                        CourseRepository courseRepository,
+                        PaymentRepository paymentRepository,
+                        OutboxEventRepository outboxEventRepository,
+                        ObjectMapper objectMapper,
+                        ProcessedEventRepository processedEventRepository,
+                        MeterRegistry meterRegistry) {
+                this.enrollmentRepository = enrollmentRepository;
+                this.studentRepository = studentRepository;
+                this.courseRepository = courseRepository;
+                this.paymentRepository = paymentRepository;
+                this.outboxEventRepository = outboxEventRepository;
+                this.objectMapper = objectMapper;
+                this.processedEventRepository = processedEventRepository;
+                this.enrollmentsCreatedCounter = meterRegistry.counter("enrollments.created");
         }
 
-        Student student = studentRepository.findById(request.studentId())
-                .orElseThrow(() -> new ResourceNotFoundException("Student not found"));
+        @Transactional
+        public EnrollmentResponse enroll(
+                        CreateEnrollmentRequest request,
+                        String idempotencyKey,
+                        Authentication authentication) {
 
-        validateStudentOwnership(student, authentication);
+                Enrollment existingEnrollment = enrollmentRepository
+                                .findByIdempotencyKey(idempotencyKey)
+                                .orElse(null);
 
-        Course course = courseRepository.findById(request.courseId())
-                .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
+                if (existingEnrollment != null) {
+                        boolean sameRequest = existingEnrollment.getStudent().getId().equals(request.studentId())
+                                        && existingEnrollment.getCourse().getId().equals(request.courseId());
 
-        if (enrollmentRepository.existsByStudentIdAndCourseIdAndStatusNot(
-                student.getId(),
-                course.getId(),
-                EnrollmentStatus.CANCELLED)) {
-            throw new ConflictException("Student is already enrolled in this course");
+                        if (!sameRequest) {
+                                throw new ConflictException(
+                                                "Idempotency-Key was already used for a different enrollment");
+                        }
+
+                        return toResponse(existingEnrollment);
+                }
+
+                Student student = studentRepository.findById(request.studentId())
+                                .orElseThrow(() -> new ResourceNotFoundException("Student not found"));
+
+                validateStudentOwnership(student, authentication);
+
+                Course course = courseRepository.findById(request.courseId())
+                                .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
+
+                if (enrollmentRepository.existsByStudentIdAndCourseIdAndStatusNot(
+                                student.getId(),
+                                course.getId(),
+                                EnrollmentStatus.CANCELLED)) {
+                        throw new ConflictException("Student is already enrolled in this course");
+                }
+
+                int updatedRows = courseRepository.reserveSeat(
+                                course.getId(),
+                                CourseStatus.PUBLISHED);
+
+                if (updatedRows == 0) {
+                        throw new ConflictException("Course is not available for enrollment");
+                }
+
+                Enrollment enrollment = new Enrollment(student, course, idempotencyKey);
+                Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
+
+                Payment payment = new Payment(
+                                savedEnrollment,
+                                course.getPrice(),
+                                "EUR",
+                                idempotencyKey);
+
+                paymentRepository.save(payment);
+
+                UUID eventId = UUID.randomUUID();
+
+                EnrollmentCreatedEvent event = new EnrollmentCreatedEvent(
+                                eventId,
+                                1,
+                                java.time.Instant.now(),
+                                savedEnrollment.getId(),
+                                student.getId(),
+                                course.getId(),
+                                payment.getId(),
+                                payment.getAmount(),
+                                payment.getCurrency());
+
+                try {
+                        String payload = objectMapper.writeValueAsString(event);
+
+                        outboxEventRepository.save(
+                                        new OutboxEvent(
+                                                        eventId,
+                                                        "EnrollmentCreated",
+                                                        savedEnrollment.getId(),
+                                                        payload));
+                } catch (JacksonException exception) {
+                        throw new IllegalStateException(
+                                        "Could not serialize EnrollmentCreated event",
+                                        exception);
+                }
+
+                enrollmentsCreatedCounter.increment();
+                return toResponse(savedEnrollment);
+
         }
 
-        int updatedRows = courseRepository.reserveSeat(
-                course.getId(),
-                CourseStatus.PUBLISHED);
+        @Transactional
+        public EnrollmentResponse cancel(UUID enrollmentId, Authentication authentication) {
+                Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+                                .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
 
-        if (updatedRows == 0) {
-            throw new ConflictException("Course is not available for enrollment");
+                validateStudentOwnership(enrollment.getStudent(), authentication);
+                enrollment.cancel();
+
+                int updatedRows = courseRepository.releaseSeat(
+                                enrollment.getCourse().getId());
+
+                if (updatedRows == 0) {
+                        throw new ConflictException("Could not release course seat");
+                }
+
+                return toResponse(enrollment);
         }
 
-        Enrollment enrollment = new Enrollment(student, course, idempotencyKey);
-        Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
+        @Transactional
+        public void processPaymentConfirmed(PaymentConfirmedEvent event) {
+                if (processedEventRepository.existsById(event.eventId())) {
+                        return;
+                }
 
-        Payment payment = new Payment(
-                savedEnrollment,
-                course.getPrice(),
-                "EUR",
-                idempotencyKey);
+                Enrollment enrollment = enrollmentRepository
+                                .findById(event.enrollmentId())
+                                .orElseThrow(() -> new ResourceNotFoundException(
+                                                "Enrollment not found"));
 
-        paymentRepository.save(payment);
+                enrollment.activate();
 
-        UUID eventId = UUID.randomUUID();
-
-        EnrollmentCreatedEvent event = new EnrollmentCreatedEvent(
-                eventId,
-                1,
-                java.time.Instant.now(),
-                savedEnrollment.getId(),
-                student.getId(),
-                course.getId(),
-                payment.getId(),
-                payment.getAmount(),
-                payment.getCurrency());
-
-        try {
-            String payload = objectMapper.writeValueAsString(event);
-
-            outboxEventRepository.save(
-                    new OutboxEvent(
-                            eventId,
-                            "EnrollmentCreated",
-                            savedEnrollment.getId(),
-                            payload));
-        } catch (JacksonException exception) {
-            throw new IllegalStateException(
-                    "Could not serialize EnrollmentCreated event",
-                    exception);
+                processedEventRepository.save(
+                                new ProcessedEvent(event.eventId()));
         }
 
-        enrollmentsCreatedCounter.increment();
-        return toResponse(savedEnrollment);
+        @Transactional
+        public EnrollmentResponse updateProgress(
+                        UUID enrollmentId,
+                        UpdateProgressRequest request,
+                        Authentication authentication) {
 
-    }
+                Enrollment enrollment = enrollmentRepository
+                                .findById(enrollmentId)
+                                .orElseThrow(() -> new ResourceNotFoundException(
+                                                "Enrollment not found"));
 
-    @Transactional
-    public EnrollmentResponse cancel(UUID enrollmentId, Authentication authentication) {
-        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
+                validateStudentOwnership(enrollment.getStudent(), authentication);
 
-        validateStudentOwnership(enrollment.getStudent(), authentication);
-        enrollment.cancel();
+                boolean completed = enrollment.updateProgress(request.progress());
 
-        int updatedRows = courseRepository.releaseSeat(
-                enrollment.getCourse().getId());
+                if (completed) {
+                        UUID eventId = UUID.randomUUID();
 
-        if (updatedRows == 0) {
-            throw new ConflictException("Could not release course seat");
+                        EnrollmentCompletedEvent event = new EnrollmentCompletedEvent(
+                                        eventId,
+                                        1,
+                                        Instant.now(),
+                                        enrollment.getId(),
+                                        enrollment.getStudent().getId(),
+                                        enrollment.getCourse().getId());
+
+                        String payload = objectMapper.writeValueAsString(event);
+
+                        outboxEventRepository.save(
+                                        new OutboxEvent(
+                                                        eventId,
+                                                        "EnrollmentCompleted",
+                                                        enrollment.getId(),
+                                                        payload));
+                }
+
+                return toResponse(enrollment);
         }
 
-        return toResponse(enrollment);
-    }
+        private void validateStudentOwnership(
+                        Student student,
+                        Authentication authentication) {
 
-    @Transactional
-    public void processPaymentConfirmed(PaymentConfirmedEvent event) {
-        if (processedEventRepository.existsById(event.eventId())) {
-            return;
+                boolean admin = authentication.getAuthorities()
+                                .stream()
+                                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+
+                if (admin) {
+                        return;
+                }
+
+                if (!student.getEmail()
+                                .equalsIgnoreCase(authentication.getName())) {
+                        throw new AccessDeniedException(
+                                        "You cannot manage another student's enrollment");
+                }
         }
 
-        Enrollment enrollment = enrollmentRepository
-                .findById(event.enrollmentId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Enrollment not found"));
+        @Transactional(readOnly = true)
+        public Page<EnrolledStudentResponse> findStudentsByCourse(UUID courseId, Pageable pageable) {
 
-        enrollment.activate();
+                if (!courseRepository.existsById(courseId)) {
+                        throw new ResourceNotFoundException("Course not found");
+                }
 
-        processedEventRepository.save(
-                new ProcessedEvent(event.eventId()));
-    }
-
-    @Transactional
-    public EnrollmentResponse updateProgress(
-            UUID enrollmentId,
-            UpdateProgressRequest request,
-            Authentication authentication) {
-
-        Enrollment enrollment = enrollmentRepository
-                .findById(enrollmentId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Enrollment not found"));
-
-        validateStudentOwnership(enrollment.getStudent(),authentication);
-
-        boolean completed = enrollment.updateProgress(request.progress());
-
-        if (completed) {
-            UUID eventId = UUID.randomUUID();
-
-            EnrollmentCompletedEvent event = new EnrollmentCompletedEvent(
-                    eventId,
-                    1,
-                    Instant.now(),
-                    enrollment.getId(),
-                    enrollment.getStudent().getId(),
-                    enrollment.getCourse().getId());
-
-            String payload = objectMapper.writeValueAsString(event);
-
-            outboxEventRepository.save(
-                    new OutboxEvent(
-                            eventId,
-                            "EnrollmentCompleted",
-                            enrollment.getId(),
-                            payload));
+                return enrollmentRepository.findStudentsByCourseId(courseId, pageable);
         }
 
-        return toResponse(enrollment);
-    }
+        @Transactional(readOnly = true)
+        public Page<EnrolledCourseResponse> findCoursesByStudent(UUID studentId, Pageable pageable) {
 
-    private void validateStudentOwnership(
-            Student student,
-            Authentication authentication) {
+                if (!studentRepository.existsById(studentId)) {
+                        throw new ResourceNotFoundException("Student not found");
+                }
 
-        boolean admin = authentication.getAuthorities()
-                .stream()
-                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
-
-        if (admin) {
-            return;
+                return enrollmentRepository.findCoursesByStudentId(studentId, pageable);
         }
 
-        if (!student.getEmail()
-                .equalsIgnoreCase(authentication.getName())) {
-            throw new AccessDeniedException(
-                    "You cannot manage another student's enrollment");
+        private EnrollmentResponse toResponse(Enrollment enrollment) {
+                return new EnrollmentResponse(
+                                enrollment.getId(),
+                                enrollment.getStudent().getId(),
+                                enrollment.getCourse().getId(),
+                                enrollment.getStatus(),
+                                enrollment.getProgress(),
+                                enrollment.getEnrolledAt());
         }
-    }
-
-    private EnrollmentResponse toResponse(Enrollment enrollment) {
-        return new EnrollmentResponse(
-                enrollment.getId(),
-                enrollment.getStudent().getId(),
-                enrollment.getCourse().getId(),
-                enrollment.getStatus(),
-                enrollment.getProgress(),
-                enrollment.getEnrolledAt());
-    }
 }
